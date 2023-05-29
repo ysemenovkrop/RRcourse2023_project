@@ -1,16 +1,27 @@
-# libraries
-library(readxl)
-library(dplyr)
-library(xts)
-
 # suppressing the warnings
 options(warn = -1)
 
 # setting the working directory
 setwd("/Users/yuriisemenov/Documents/GitHub/RRcourse2023_project/Data")
 
-# creating a vector with the names of the row files
-data <- c("CPI", "DSPI", "HPI", "IR", "POP", "UNRATE", "CONF_2", "GDP")
+# installing libraries
+install.packages("fma")
+
+# loading libraries
+library(readxl)
+library(dplyr)
+library(xts)
+library(urca)
+library(vars)
+library(stats)
+library(fma)
+
+# loading external function 
+source("/Users/yuriisemenov/Documents/GitHub/RRcourse2023_project/ARMA_function.R")
+
+
+# creating a vector with the names of the raw files
+data <- c("CPI", "DSPI", "HPI", "IR", "POP", "UNRATE", "CONF", "GDP", "MORTG")
 
 # loading the data
 for (i in data) {
@@ -20,10 +31,9 @@ for (i in data) {
   assign(i, read_excel(file_path))  
 }
 
-file_path
 # checking the structure of the data
 data_2 <- list(CPI = CPI, DSPI = DSPI, HPI = HPI, IR = IR, POP = POP,
-               UNRATE = UNRATE, CONF_2 = CONF_2)
+               UNRATE = UNRATE, CONF = CONF)
 
 for (i in names(data_2)) {
   x = str(data_2[[i]])
@@ -42,38 +52,76 @@ data_3 <- list(CPI = CPI, DSPI = DSPI, HPI = HPI, IR = IR, POP = POP,
 # convert to the xts object
 # aggregate to quarter basis
 
-for (name in names(data_3)) {
-  df <- as.data.frame(data_3[[name]])
-  names(df) <- c("Date", name)
+for (i in names(data_3)) {
+  df <- as.data.frame(data_3[[i]])
+  names(df) <- c("Date", i)
   df_xts <- xts(df[,2], order.by=df$Date)
   df_q <- to.quarterly(df_xts)[, 4]
-  assign(paste0(name, "_q"), df_q)
+  assign(paste0(i, "_q"), df_q)
 }
 
 
-# as CONF and GDP are downloaded with the quarterly frequency -> do adjustment
+# as CONF, GDP and MORTG are downloaded with the quarterly frequency -> do adjustment
 # outside the the main loop
 # confidence
-CONF_2 <- CONF_2[2]
-CONF_2 <- data.frame(CONF_2)
-# producing a vector that has all numeric values for CONF_2
-CONF_2 <- as.numeric(unlist(CONF_2))
+CONF <- CONF[2]
+CONF <- data.frame(CONF)
+# producing a vector that has all numeric values for CONF
+CONF <- as.numeric(unlist(CONF))
 # GDP
 GDP <- GDP[2]
 GDP <- data.frame(GDP)
 # producing a vector that has all numeric values for GDP_2
 GDP <- as.numeric(unlist(GDP))
+# Mortgage
+MORTG <- MORTG[2]
+MORTG <- data.frame(MORTG)
+# producing a vector that has all numeric values for CONF
+MORTG <- as.numeric(unlist(MORTG))
 
 # creating the final dataset with all variables
-dataset <- merge(CPI_q, DSPI_q, GDP, HPI_q, IR_q, POP_q, UNRATE_q, CONF_2)
-names(dataset) <- c("CPI", "DSPI", "GDP", "HPI", "IR", "POP", "UNRATE", "CONF")
+dataset <- merge(CPI_q, DSPI_q, GDP, HPI_q, IR_q, POP_q, UNRATE_q, CONF, MORTG)
+names(dataset) <- c("CPI", "DSPI", "GDP", "HPI", "IR", "POP", "UNRATE", "CONF", 
+                    "MORTG")
 
 # removing unnecessary objects  
-rm(CPI, DSPI, GDP, HPI, IR, POP, UNRATE,CONF_2, data_2, data_3, df, df_q, df_xts, CPI_q, 
+rm(CPI, DSPI, GDP, HPI, IR, POP, UNRATE,CONF, MORTG, data_2, data_3, df, df_q, df_xts, CPI_q, 
    DSPI_q, HPI_q, IR_q, POP_q, UNRATE_q, data, file_path, file_name, 
-   i, name,x, filename)
+   i,x, filename)
 
 # saving the preparing data file as an R object
+
 save(dataset, file = "dataset")
 print("dataset is created. You can proceed with the analysis")
+
+
+### Replication of the empirical results
+
+## taking first difference of the variables 
+# saving the original dataset for the reference purposes
+dataset_reserve <- dataset
+
+# loop for taking the first difference
+for (i in 1:ncol(dataset)) {
+  dataset[,i] <- diff.xts(dataset[,i], lag = 1)
+}
+
+# removing NAs 
+dataset <- dataset[-1, ]
+colSums(is.na(dataset))
+
+## Inverse Roots of AR Characteristic Polynomial
+# using the exported arrots function plotting the inverse roots of AR 
+# characteristic polynomial 
+plot(arroots(ar.ols(dataset$GDP, dataset$IR)))
+plot(arroots(ar.ols(dataset$HPI, dataset$DSPI)))
+plot(arroots(ar.ols(dataset$POP, dataset$UNRATE)))
+plot(arroots(ar.ols(dataset$MORTG)))
+
+
+
+# selecting number of lags in the model
+VARselect(dataset, 
+          lag.max = 6)
+
 
