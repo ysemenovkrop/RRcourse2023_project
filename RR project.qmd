@@ -1,0 +1,620 @@
+---
+title: "RR Project Report"
+author: "Ahmed, Semenov, Singh"
+date: "06/18/2023"
+format:
+  html: 
+    toc: true
+    toc-depth: 2
+    toc-expand: 3
+    toc-title: Contents
+    toc-location: left
+theme: solar
+editor: visual
+execute:
+  echo: false
+  warning: false
+  messages: false
+---
+
+## I. Original research
+
+*The original research aimed to investigate the relationship between US housing prices and US consumer confidence level, quantified by the University of Michigan Consumer Sentiment Index. In an attempt to combine classical economic theory with behavioral theory, the research hypothesized that consumer confidence (quantified) had a positive influence on the changes in housing market. Towards conducting such an analyses, a Vector Autoregressive model was implemented, with two target variables - HPI, a broad measure of the movement of single-family house prices possibly deviating from its fundamental value (common definition of an "asset bubble") and CONF, representing the confidence level of US consumers.*
+
+## II. Reproduction of results (by translation of code from E-Views into R language)
+
+```{r}
+#options(repos = list(CRAN="http://cran.rstudio.com/"))
+
+# setting the working directory
+setwd("C:/Users/U161808/Desktop/Project/Data")
+
+# installing libraries
+#install.packages("fma")
+#install.packages("ggplot2")
+#install.packages("gridExtra")
+
+# loading libraries
+library(readxl)
+library(dplyr)
+library(xts)
+library(urca)
+library(vars)
+library(stats)
+library(fma)
+library(forecast)
+library(ggplot2)
+library(tidyr)
+library(gridExtra)
+
+# loading external function
+source("C:/Users/U161808/Desktop/Project/Data/ARMA_function.R")
+source("C:/Users/U161808/Desktop/Project/Data/testdf.R")
+```
+
+## 1. Data pre-processing
+
+*On account of the original research presenting sufficient information regarding model variables and their sources, we were able to download/acquire the necessary data. However, variable MORG, which is later included in the original research analysis isn't described in Table1.Variables -definitions and sources, however from the written description of the variables, we do know that MORG is supposed to represent number of outstanding mortgages nationally; therefore we include such a variable, but the data used by us vs the original research might differ.Additionally the original research does not mention anything on data pre-processing methods. Hence, relying on subjective intuition we exclude missing (NA) values at the source level (i.e raw data) and proceed towards adjusting the frequency of the data (quarterly frequency) and concatenating data sets.*
+
+|Variable   |Brief Description                                   |Source                                     |
+|:----------|:---------------------------------------------------|:------------------------------------------|
+|**HPI**    |Housing Pricing Index (1980=100)                    |Federal Reserve Economic Data              |
+|**GDP**    |Gross Domestic Product (current US$, billions)      |Federal Reserve Economic Data              |
+|**CONF**   |Michigan Confidence Index (1964=100)                |Surveys of consumers,University of Michigan|
+|**DSPI**   |Real Disposable Personal Income (chained 2009)      |Federal Reserve Economic Data              |
+|**CPI**    |Consumer Price Index (1984=100)                     |Federal Reserve Economic Data              |
+|**UNRATE** |Unemployment (% out of total labor force)           |Federal Reserve Economic Data              |
+|**POP**    |Total population (All ages, thousands)              |Federal Reserve Economic Data              |
+|**IR**     |Interest rate of 10 Yr US Treasury Bond             |Federal Reserve Economic Data              |
+
+```{r,echo = FALSE}
+#invisible({
+# creating a vector with the names of the raw files
+
+#data <- c("CPI", "DSPI", "HPI", "IR", "POP", "UNRATE", "CONF", "GDP", "MORTG")
+
+# loading the data
+
+#for (i in data) {
+#  filename <- paste0(i, ".xls")
+#  file_path <- paste0("C:/Users/U161808/Desktop/Project/Data/Raw Data/",
+#                      filename)
+#  assign(i, read_excel(file_path))
+#}
+
+# checking the structure of the data
+
+#data_2 <- list(CPI = CPI, DSPI = DSPI, HPI = HPI, IR = IR, POP = POP,
+#               UNRATE = UNRATE, CONF = CONF)
+#for (i in names(data_2)) {
+#  x = str(data_2[[i]])
+#  print(paste(i, as.character(x)))
+#}
+
+## standardization of the data
+# list to loop through
+
+#data_3 <- list(CPI = CPI, DSPI = DSPI, HPI = HPI, IR = IR, POP = POP,
+#               UNRATE = UNRATE)
+
+# steps for the loops:
+# convert to data frame
+# standardize the column names as "Date" + "name of the variable"
+# convert to the xts object
+# aggregate to quarter basis
+
+#for (i in names(data_3)) {
+#  df <- as.data.frame(data_3[[i]])
+#  names(df) <- c("Date", i)
+#  df_xts <- xts(df[,2], order.by=df$Date)
+#  df_q <- to.quarterly(df_xts)[, 4]
+#  assign(paste0(i, "_q"), df_q)
+#}
+
+# as CONF, GDP and MORTG are downloaded with quarterly frequency, adjustment is made outside the the main loop
+
+# confidence
+#CONF <- CONF[2]
+#CONF <- data.frame(CONF)
+# producing a vector that has all numeric values for CONF
+#CONF <- as.numeric(unlist(CONF))
+
+# GDP
+#GDP <- GDP[2]
+#GDP <- data.frame(GDP)
+# producing a vector that has all numeric values for GDP_2
+#GDP <- as.numeric(unlist(GDP))
+
+# Mortgage
+#MORTG <- MORTG[2]
+#MORTG <- data.frame(MORTG)
+# producing a vector that has all numeric values for CONF
+#MORTG <- as.numeric(unlist(MORTG))
+
+# creating the final dataset with all variables
+
+#dataset <- merge(CPI_q, DSPI_q, GDP, HPI_q, IR_q, POP_q, UNRATE_q, CONF, MORTG)
+#names(dataset) <- c("CPI", "DSPI", "GDP", "HPI", "IR", "POP", "UNRATE", "CONF",
+#                    "MORTG")
+
+# removing unnecessary objects
+
+#rm(CPI, DSPI, GDP, HPI, IR, POP, UNRATE,CONF, MORTG, data_2, data_3, df, df_q, df_xts, CPI_q,
+#   DSPI_q, HPI_q, IR_q, POP_q, UNRATE_q, data)
+
+#saving the preparing data file as an R object
+#save(dataset, file = "dataset")
+#})
+```
+
+```{r}
+#loading dataset
+load("dataset") 
+```
+
+## 2. Modelling
+
+***(a) ** Stationarity,*
+          
+*The original research uses unit root tests in analyzing stationary of modeled variables. After first differences are taken, the Inverse Roots of AR Characteristic Polynomial, showed that there was no non-stationarity in the model as all values lied within the unit root circle. Our reproduction shows the same results.*
+
+```{r,echo = FALSE}
+invisible({
+## taking first differences of the variables
+# loop for taking the first difference of the
+
+for (i in 1:ncol(dataset)) {
+  dataset[,i] <- diff.xts(dataset[,i], lag = 1)
+}
+
+# removing NAs
+dataset <- dataset[-1, ]
+colSums(is.na(dataset))
+
+})
+```
+
+::: {.panel-tabset}
+
+## GDP
+```{r}
+#| label: fig-plot1
+#| fig-cap: "Inverse Roots of AR Characteristic Polynomial - GDP"
+```
+
+```{r}
+## Inverse Roots of AR Characteristic Polynomial
+# using the exported carrots function plotting the inverse roots of AR
+# characteristic polynomial
+plot(arroots(ar.ols(dataset$GDP)))
+```
+
+## IR
+```{r}
+#| label: fig-plot2
+#| fig-cap: "Inverse Roots of AR Characteristic Polynomial - IR"
+```
+
+```{r}
+plot(arroots(ar.ols(dataset$IR)))
+```
+
+## HPI
+```{r}
+#| label: fig-plot3
+#| fig-cap: "Inverse Roots of AR Characteristic Polynomial - HPI"
+```
+
+```{r}
+plot(arroots(ar.ols(dataset$HPI)))
+```
+
+## DSPI
+```{r}
+#| label: fig-plot4
+#| fig-cap: "Inverse Roots of AR Characteristic Polynomial - DSPI"
+```
+
+```{r}
+plot(arroots(ar.ols(dataset$DSPI)))
+```
+
+## POP
+```{r}
+#| label: fig-plot5
+#| fig-cap: "Inverse Roots of AR Characteristic Polynomial - POP"
+```
+
+```{r}
+plot(arroots(ar.ols(dataset$POP)))
+```
+
+## UNRATE
+```{r}
+#| label: fig-plot6
+#| fig-cap: "Inverse Roots of AR Characteristic Polynomial - UNRATE"
+```
+
+```{r}
+plot(arroots(ar.ols(dataset$UNRATE)))
+```
+
+## MORTG
+```{r}
+#| label: fig-plot7
+#| fig-cap: "Inverse Roots of AR Characteristic Polynomial - MORTG"
+```
+
+```{r}
+plot(arroots(ar.ols(dataset$MORTG)))
+```
+
+## CONF
+```{r}
+#| label: fig-plot8
+#| fig-cap: "Inverse Roots of AR Characteristic Polynomial - CONF"
+```
+
+```{r}
+plot(arroots(ar.ols(dataset$CONF)))
+```
+
+:::
+
+***(b) ** Correlation,*
+
+*The original research presents Table 6. Correlation between 11 variables in the model, which shows correlation of 0.65 between HPI and MORG (the only p>=0.5), but does not describe which type of correlation was calculated in deriving such a conclusion. Additionally, variable FED appears in Table 6, which is mentioned neither earlier or later in the original research (hence, we also exclude it from our reproduction). Because of this, we aren't able to fully reproduce the correlation matrix. We calculate Pearson, Kendall and Spearman correlation. In our reproduction, neither of the correlations show as strong a result between HPI and MORG (or between any two variables) as decribed in the original research, although Pearson and Spearman correlation do deliver the only p>=0.5 for HPI and MORG (p=0.58 and p=0.55, respectively).*
+
+::: {.panel-tabset}
+
+## Pearson correlation
+```{r}
+#| label: fig-table1
+#| fig-cap: "Pearson correlation matrix"
+```
+
+```{r}
+cor(dataset, method = "pearson")
+```
+
+## Kendall correlation
+```{r}
+#| label: fig-table2
+#| fig-cap: "Kendall correlation matrix"
+```
+
+```{r}
+cor(dataset, method = "kendall")
+```
+
+## Spearman correlation
+```{r}
+#| label: fig-table3
+#| fig-cap: "Spearman correlation matrix"
+```
+
+```{r}
+cor(dataset, method = "spearman")
+```
+
+:::
+
+***(c) **Choosing the best VAR model,*
+
+*The original research describes equation 1 and 2 for HPI and CONF VAR models, respectively. Both equations include coefficients for an unknown exogenous variable - B(1,7) and C(2,7) and it seems that both models include 3 lags of HPI and CPI and 1 lag of each of the remaining variables:*
+
+![](VAR_equations.png)
+
+*In selecting the proper lag length for the VAR model, the original research uses multivariate information criteria. Different models were estimated and compared for a maximum number of 3 lags. In the original research, the majority of selection criterias (AIC, HQ, SC and FPE) chose lag nr. 3. In our case, there is a 50/50 split between lag length 1 and any maximum lag length (where max(lag)=<10), where HQ and SC favor lag length 1 and AIC and FPE favor the maximum lag length.*
+
+```{r}
+VARselect(dataset,
+          lag.max = 3)
+```
+
+*As an extension of the lag selection method used in the original report we decide to also: (a) check for joint significance of parameters for additional lags, (b) analyse autocorrelation of model residuals in selected VAR models using Portmanteau test and Breusch-Godfrey test*
+
+*According to our joint significance test - VAR model with lag length 2 would be the best fit, however VAR model with lag length 3 does have a higher adjusted-R2. In turn, diagnostic tests indicate autocorrelation of residuals in all variations under maximum lag length 3 (although for VAR model with lag length 3 residuals are slightly less autocorrelated than in the rest). It is also noticeable that the first lags of the macroeconomic variables are most significant - compared to their 2nd or 3rd lag lengths, which speaks towards the choice of Equation 1 and Equation 2 made by the author of the original research.*
+
+::: {.panel-tabset}
+
+## Additonal tests for VAR model with l=1
+```{r}
+#| label: fig-set1
+#| fig-cap: "VAR model with l=1 - results"
+```
+
+```{r}
+VAR_HPI_CONF_p1 <- VAR(dataset,
+                    p = 1) # order of VAR model
+summary(VAR_HPI_CONF_p1)$varresult$HPI #p-value<2.2e-16 #Adjusted R-squared:  0.5925 
+summary(VAR_HPI_CONF_p1)$varresult$CONF #p-value<0.4194 #Adjusted R-squared:  0.001527
+```
+
+```{r}
+#plot(VAR_HPI_CONF_p1)
+serial.test(VAR_HPI_CONF_p1) # Portmanteau test
+serial.test(VAR_HPI_CONF_p1, type = "BG") #Breusch-Godfrey test
+```
+
+## Additonal tests for VAR model with l=2
+```{r}
+#| label: fig-set2
+#| fig-cap: "VAR model with l=2 - results"
+```
+
+```{r}
+VAR_HPI_CONF_p2 <- VAR(dataset,
+                    p = 2) # order of VAR model
+summary(VAR_HPI_CONF_p2)$varresult$HPI #p-value<2.2e-16 #Adjusted R-squared:  0.6217 
+summary(VAR_HPI_CONF_p2)$varresult$CONF #p-value:0.05081 #Adjusted R-squared:  0.06688 
+```
+
+```{r}
+#plot(VAR_HPI_CONF_p2)
+serial.test(VAR_HPI_CONF_p2) # Portmanteau test
+serial.test(VAR_HPI_CONF_p2, type = "BG") #Breusch-Godfrey test
+```
+
+## Additonal tests for VAR model with l=3
+```{r}
+#| label: fig-set3
+#| fig-cap: "VAR model with l=3 - results"
+```
+
+```{r}
+VAR_HPI_CONF_p3 <- VAR(dataset,
+                    p = 3) # order of VAR model
+summary(VAR_HPI_CONF_p3)$varresult$HPI #p-value<2.2e-16 #Adjusted R-squared:  0.719
+summary(VAR_HPI_CONF_p3)$varresult$CONF #p-value:0.1239 #Adjusted R-squared:  0.05625 
+```
+
+```{r}
+#plot(VAR_HPI_CONF_p3)
+serial.test(VAR_HPI_CONF_p3) # Portmanteau test
+serial.test(VAR_HPI_CONF_p3, type = "BG") #Breusch-Godfrey test
+```
+
+## Additonal tests for VAR model with l=4
+```{r}
+#| label: fig-set4
+#| fig-cap: "VAR model with l=4 - results"
+```
+
+```{r}
+VAR_HPI_CONF_p4 <- VAR(dataset,
+                    p = 4) # order of VAR model
+summary(VAR_HPI_CONF_p4)$varresult$HPI #p-value<2.2e-16 #Adjusted R-squared:   0.7157 
+summary(VAR_HPI_CONF_p4)$varresult$CONF #p-value: 0.1907 #Adjusted R-squared:  0.04973 
+```
+
+```{r}
+#plot(VAR_HPI_CONF_p4)
+serial.test(VAR_HPI_CONF_p4) # Portmanteau test
+serial.test(VAR_HPI_CONF_p4, type = "BG") #Breusch-Godfrey test
+```
+
+:::
+
+```{r}
+VAR_EQ1 <- lm(dataset$HPI[4:171] ~ dataset$HPI[3:170] + dataset$HPI[2:169] + dataset$HPI[1:168] + dataset$CONF[3:170] + dataset$CONF[2:169] + dataset$CONF[1:168] + dataset$CPI[1:168] + dataset$DSPI[1:168] + dataset$GDP[1:168] + dataset$IR[1:168] + dataset$POP[1:168] + dataset$UNRATE[1:168] + dataset$MORTG[1:168])
+
+VAR_EQ2 <- lm(dataset$CONF[4:171] ~ dataset$HPI[3:170] + dataset$HPI[2:169] + dataset$HPI[1:168] + dataset$CONF[3:170] + dataset$CONF[2:169] + dataset$CONF[1:168] + dataset$CPI[1:168] + dataset$DSPI[1:168] + dataset$GDP[1:168] + dataset$IR[1:168] + dataset$POP[1:168] + dataset$UNRATE[1:168] + dataset$MORTG[1:168])
+```
+
+**The Best VAR Model**
+
+::: {.panel-tabset}
+
+## Best VAR Model Equation 1
+```{r}
+#| label: fig-formula1
+#| fig-cap: "Equation 1"
+```
+
+```{r}
+VAR_EQ1_coef <- coeftest(VAR_EQ1, vcov. = sandwich)
+VAR_EQ1_coef
+VAR_HPI_CONF_coef <- summary(VAR_HPI_CONF_p3)$varresult$HPI$coefficients #p-value<2.2e-16 #Adjusted R-squared:  0.719
+VAR_HPI_CONF_coef
+```
+
+## Best VAR Model Equation 2
+```{r}
+#| label: fig-formula2
+#| fig-cap: "Equation 2"
+```
+
+```{r}
+VAR_EQ2_coef <- coeftest(VAR_EQ2, vcov. = sandwich)
+VAR_EQ2_coef
+VAR_CONF_HPI <- summary(VAR_HPI_CONF_p3)$varresult$CONF
+VAR_CONF_HPI_coef <- summary(VAR_HPI_CONF_p3)$varresult$CONF$coefficients #p-value<2.2e-16 #Adjusted R-squared:  0.719
+VAR_CONF_HPI_coef
+```
+
+:::
+
+***(d) ** Granger causality test,*
+
+*The original research investigates whether Housing Pricing Index (HPI) causes movements in the Michigan Confidence Index (CONF) and vice versa. The author conducts a Granger causality test and concludes that CONF has a much stronger influence over HPI than HPI over CONF.*
+
+*For lag length 2, we reject the hypothesis that HPI does not Granger cause CONF and fail to reject the hypothesis that CONF does not Granger cause HPI, meaning that HPI Granger causes CONF, but CONF does not Granger cause HPI. For lag length 1 and 3, we see no Granger causality in either of the directions.*
+
+::: {.panel-tabset}
+
+## Granger causality test for VAR model with l=1
+```{r}
+#| label: fig-set1
+#| fig-cap: "Granger causality test for VAR model with l=1 - results"
+```
+
+```{r}
+# 1 lags
+grangertest(dataset$HPI~dataset$CONF, data = data.frame(), order = 1) 
+grangertest(dataset$CONF~dataset$HPI, data = data.frame(), order = 1) 
+```
+
+## Granger causality test for VAR model with l=2
+```{r}
+#| label: fig-set2
+#| fig-cap: "Granger causality test for VAR model with l=2 - results"
+```
+
+```{r}
+# 2 lags
+grangertest(dataset$HPI~dataset$CONF, data = data.frame(), order = 2) 
+grangertest(dataset$CONF~dataset$HPI, data = data.frame(), order = 2) 
+```
+
+## Granger causality test for VAR model with l=3
+```{r}
+#| label: fig-set3
+#| fig-cap: "Granger causality test for VAR model with l=3 - results"
+```
+
+```{r}
+# 3 lags
+grangertest(dataset$HPI~dataset$CONF, data = data.frame(), order = 3) 
+grangertest(dataset$CONF~dataset$HPI, data = data.frame(), order = 3) 
+```
+
+## Granger causality test for VAR model with l=4
+```{r}
+#| label: fig-set4
+#| fig-cap: "Granger causality test for VAR model with l=4 - results"
+```
+
+```{r}
+# 4 lags
+grangertest(dataset$HPI~dataset$CONF, data = data.frame(), order = 4) 
+grangertest(dataset$CONF~dataset$HPI, data = data.frame(), order = 4) 
+```
+
+:::
+
+***(e) ** Impulse responses,*
+
+*Additionally the author analyses 4 types of response impulses (using Monte Carlo standard error).*
+
+*The author concludes and our reproduction confirms that*
+
+*a) in reaction to a positive shock in CONF, HPI would diverge from its equilibrium value for the next few periods and then stabilize;*
+
+```{r}
+plot(irf(VAR_HPI_CONF_p3, impulse = "CONF", response = c("HPI"), n.ahead = 20))
+```
+
+*b) in reaction to a positive shock in the previous value of HPI, the value of HPI would diverge from its theoretical equilibrium, proving the existence of a bubble;*
+
+```{r}
+plot(irf(VAR_HPI_CONF_p3, impulse = "HPI", response = c("HPI"), n.ahead = 20))
+```
+
+*c) one positive shock in HPI would lead to an increase in CONF for half a year, after that confidence would become negative and diminish up to the 20th period;*
+
+```{r}
+plot(irf(VAR_HPI_CONF_p3, impulse = "HPI", response = c("CONF"), n.ahead = 20))
+```
+
+*d) after a one-standard deviation in the shift in CONF, confidence increases and then diminishes during the whole period of analysis, yet remaining above the initial level*
+
+```{r}
+plot(irf(VAR_HPI_CONF_p3, impulse = "CONF", response = c("CONF"), n.ahead = 20))
+```
+
+## III. Improvements and extensions
+
+***(a) ** Forecast Error Variance Decomposition (FEVD),*
+
+*Variance decomposition determines which part of the variance of the error of s-step-ahead forecast of a particular variable is explained by shocks to each explanatory variable. Our analysis shows that the 9th-step-ahead forecast of HPI could be explained by shocks in CONF and vice versa, however the former effect is stronger than the latter.*
+
+```{r}
+FEVD_HPI <- fevd(VAR_HPI_CONF_p3, n.ahead = 20)$HPI
+
+fevd_df <- as.data.frame(FEVD_HPI)
+
+# Create plots for each variable in the FEVD
+plots <- lapply(names(fevd_df), function(var) {
+  ggplot(data = fevd_df, aes(x = rownames(fevd_df), y = fevd_df[, var])) +
+    geom_bar(stat = "identity", fill = "steelblue") +
+    labs(title = paste("FEVD for", var), y = "Percentage")
+})
+
+# Combine the plots into a grid layout
+combined_plot <- do.call(grid.arrange, plots)
+
+# Add a common legend to the combined plot
+combined_plot <- combined_plot + 
+  theme(legend.position = "bottom")
+
+# Display the combined plot
+print(combined_plot)
+```
+
+```{r}
+FEVD_CONF <- fevd(VAR_HPI_CONF_p3, n.ahead = 20)$CONF
+
+fevd_df <- as.data.frame(FEVD_CONF)
+
+# Create plots for each variable in the FEVD
+plots <- lapply(names(fevd_df), function(var) {
+  ggplot(data = fevd_df, aes(x = rownames(fevd_df), y = fevd_df[, var])) +
+    geom_bar(stat = "identity", fill = "steelblue") +
+    labs(title = paste("FEVD for", var), y = "Percentage")
+})
+
+# Combine the plots into a grid layout
+combined_plot <- do.call(grid.arrange, plots)
+
+# Add a common legend to the combined plot
+combined_plot <- combined_plot + 
+  theme(legend.position = "bottom")
+
+# Display the combined plot
+print(combined_plot)
+```
+
+***(b) **Cointegration,*
+
+*Cointegration implies that there exists some mechanism of adjustment that prevents the variables to deviate too far from their long-run relationship (an Error Correction Mechanism (ECM). If this is true, it might be useful to analyze a VECM model and thus conduct a VAR-to-VECM model switch, so as to be able to better factor in short and long-term effects. Based on the ADF test with no augmentations we can strongly reject non-stationarity of residuals, which means that HPI and CONF are cointegrated.*
+
+```{r}
+
+model.coint <- lm(HPI ~ CONF, data = dataset)
+summary(model.coint)
+testdf(variable = residuals(model.coint), max.augmentations = 3)
+
+```
+
+## IV. Summary and Conclusions
+
+*As a consequence of our reproduction, we were able to:*
+
+*0.Remove non-stationarity from our data using the same unit root tests as in the original research;*
+
+*1. (By calculating various types of correlations) agree with the main correlation-related finding of the original research;*
+
+*2. (By using 1 same and 2 alternative lag-length selection techniques) agree with the best VAR models chosen and used in the original research;*
+
+*3. (By using perhaps a different methodology towards assessing the impulse responses between the main variables) agree with the authors findings that:*
+
+*a) in reaction to a positive shock in CONF, HPI would diverge from its equilibrium value for the next few periods and then stabilize;*
+
+*b) in reaction to a positive shock in the previous value of HPI, the value of HPI would diverge from its theoretical equilibrium, proving the existence of a bubble;*
+
+*c) one positive shock in HPI would lead to an increase in CONF for half a year, after which confidence would become negative and diminishe up to the 20th period;*
+
+*d) after a one-standard deviation in the shift in CONF, confidence increases and then diminishes during the whole period of analysis, yet remaining above the initial level.*
+
+*However, we also:*
+
+*0. (By using perhaps a different methodology towards assessing Granger causality between the main variables) disagree with the original research findings that CONF has a much stronger influence over HPI than HPI over CONF, where for the chosen number of lag lengths we saw no Granger causality in either directions.**
+
+*Additionally, we extended the scope of the original analysis and showed that:*
+
+*0. The 9th-step-ahead forecast of HPI could be explained by shocks in CONF and vice versa, however the former effect is stronger than the latter, that is to say that CONF affects HPI much more strongly than HPI affects CONF;*
+
+*1. That VECM might have proven to be a better model compared to VAR, since our analysis showed that CONF and HPI were cointegrated.*
+
+*In conclusion, it is our assessment that within the scope of our project, we were successful at reproducing a significant chunk of the findings presented in the original research.*
